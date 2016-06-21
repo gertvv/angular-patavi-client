@@ -2,10 +2,10 @@
 
 define(['angular'], function(angular) {
   angular.module('patavi', []).service('PataviService', ['$q', '$http', function($q, $http) {
-    // uriOrPromise: websocket URI or a promise resolving to a websocket URI
+    // uriOrPromise: Task URI or a promise resolving to a task URI
     // returns: a promise for the task results, which also sends notifications
     var listenForUpdates = function(uriOrPromise) {
-      var uriPromise = uriOrPromise.then ? uriOrPromise : $q(function(resolve) { resolve(uriOrPromise); });
+      var taskPromise = uriOrPromise.then ? uriOrPromise : $q(function(resolve) { resolve(uriOrPromise); });
 
       var resultsPromise = $q.defer();
 
@@ -15,8 +15,26 @@ define(['angular'], function(angular) {
         });
       }
 
-      uriPromise.then(function(uri) {
-        var socket = new WebSocket(uri);
+      function reportError(error) {
+        resultsPromise.reject({ 'status': 'error', 'error': error });
+      }
+
+      taskPromise.then(function(taskUrl) {
+        return $http.get(taskUrl);
+      }, reportError).then(function(response) {
+        if (!response.data || !response.data._links || !response.data._links.updates) {
+          return resultsPromise.reject({ 'status': 'error', 'error': 'Patavi returned a malformed response' });
+        }
+
+        if (response.data._links.results) {
+          if (response.data.status === "done") {
+            return getResults(response.data._links.results.href, resultsPromise.resolve);
+          } else {
+            return getResults(response.data._links.results.href, resultsPromise.reject);
+          }
+        }
+
+        var socket = new WebSocket(response.data._links.updates.href);
         socket.onmessage = function (event) {
           var data = JSON.parse(event.data);
           if (data.eventType === "done") {
@@ -24,13 +42,11 @@ define(['angular'], function(angular) {
             getResults(data.eventData.href, resultsPromise.resolve);
           } else if (data.evenType === "failed") {
             socket.close();
-            getResults(data.eventData.href, resultsPromise.reject)
+            getResults(data.eventData.href, resultsPromise.reject);
           }
           resultsPromise.notify(data);
         }
-      }, function(error) {
-        resultsPromise.reject({ 'status': 'error', 'error': error });
-      });
+      }, reportError);
 
       return resultsPromise.promise;
     };
