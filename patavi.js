@@ -40,7 +40,7 @@ define(['angular'], function(angular) {
           if (data.eventType === "done") {
             socket.close();
             getResults(data.eventData.href, resultsPromise.resolve);
-          } else if (data.evenType === "failed") {
+          } else if (data.eventType === "failed") {
             socket.close();
             getResults(data.eventData.href, resultsPromise.reject);
           }
